@@ -1,0 +1,21 @@
+Metadata-Version: 2.4
+Name: mall-micro-ai-search
+Version: 0.1.0
+Requires-Dist: fastapi>=0.112.0
+Requires-Dist: uvicorn>=0.30.0
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: pydantic-settings>=2.5.0
+Requires-Dist: pydantic>=2.10.0
+Requires-Dist: langchain>=1.2.10
+Requires-Dist: langchain_community>=0.4.0
+Requires-Dist: langchain-openai>=0.2.0
+Requires-Dist: langchain-redis>=0.2.0
+Requires-Dist: langgraph-checkpoint-redis>=0.2.0
+Requires-Dist: redis>=5.2.0
+Requires-Dist: pymysql>=1.1.0
+Requires-Dist: mysql-connector-python>=8.0.0
+Requires-Dist: sqlalchemy>=2.0.0
+Requires-Dist: langchain-redis>=0.2.0
+Requires-Dist: langgraph>=1.2.10
+Provides-Extra: dev
+Requires-Dist: pytest>=8.3.0; extra == "dev"

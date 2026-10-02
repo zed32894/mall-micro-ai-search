@@ -1,0 +1,40 @@
+[project]
+name = "mall-micro-ai-search"
+version = "0.1.0"
+dependencies = [
+    "fastapi>=0.112.0",
+    "uvicorn>=0.30.0",
+    "python-dotenv>=1.0.0",
+    "pydantic-settings>=2.5.0",
+    "pydantic>=2.10.0",
+    "langchain>=1.2.10",
+    "langchain_community>=0.4.0",
+    "langchain-openai>=0.2.0",
+    "langchain-redis>=0.2.0",
+    "langgraph-checkpoint-redis>=0.2.0",
+    "redis>=5.2.0",
+    "pymysql>=1.1.0",
+    "mysql-connector-python>=8.0.0",
+    "sqlalchemy>=2.0.0",
+     "langchain-redis>=0.2.0",
+    "langgraph>=1.2.10"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0"
+]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+[tool.setuptools.packages.find]
+include = ["smart_search*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-v"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

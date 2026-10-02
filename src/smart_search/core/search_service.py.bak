@@ -1,0 +1,160 @@
+from langchain.tools import tool
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import PydanticOutputParser
+from langgraph.checkpoint.memory import InMemorySaver
+from langchain.agents import create_agent
+from smart_search.models.schemas import SearchCondition, ProductRecommendResponse
+from smart_search.config.tools import tools
+from smart_search.config.prompts import prompt
+import logging
+
+logger = logging.getLogger(__name__)
+
+class SearchService:
+    def __init__(self):
+        # 获取大语言模型
+        self.llm = tools.get_model()
+        # 获取Prompt
+        self.search_extract_prompt = prompt.SEARCH_EXTRACT_PROMPT
+        self.search_prompt = prompt.SEARCH_PROMPT
+        # 创建向量检索实例
+        self.vector_store = tools.get_vector_store()
+        # 创建搜索记忆检索索引
+        self.checkpointer = InMemorySaver()
+        @tool
+        def vector_search_tool(query: str) -> str:
+            """
+            商品向量检索工具，获取相关商品资料。
+            Args:
+                query: 用户问题
+            return: 商品信息列表
+            """
+            print(f"vector_search_tool: query={query}")
+            docs = self.vector_store.similarity_search(query, k=10)
+            return "\n".join([f"{doc.page_content} | meta:{doc.metadata}" for doc in docs])
+
+        self.vector_search_tool = vector_search_tool
+
+    # 用户查询 - 搜索条件结构化提取
+    async def extract_search_condition(self,query:str) -> SearchCondition:
+        """
+        商品搜索条件结构化提取
+        :param query: 用户问题
+        :return: SearchCondition对象
+        """
+        # 1. 构建Pydantic解析器
+        parser = PydanticOutputParser(pydantic_object=SearchCondition)
+
+        # 2. 构建Prompt模板
+        prompt = ChatPromptTemplate.from_messages([
+            ("system",  self.search_extract_prompt),
+            ("human", "用户查询：{query}")
+        ]).partial(format_instructions=parser.get_format_instructions())
+
+        # 3. 组装执行链路
+        extract_chain = prompt | self.llm | parser
+        result = await extract_chain.ainvoke({"query": query})
+        return result   
+    
+     # 商品推荐
+    async def recommend_product(self,query: str, thread_id=0):
+        """
+        语义相似商品推荐
+        :param query: 用户查询
+        :param thread_id: 线程ID(用于记忆检索)
+        :return: 商品信息列表，并给出推荐理由
+        """
+        # 调用Agent生成回答
+        agent = create_agent(
+            model=self.llm,
+            tools=[self.vector_search_tool],
+            system_prompt=self.search_prompt,
+            checkpointer=self.checkpointer,
+            response_format=ProductRecommendResponse
+        )
+        response = await agent.ainvoke(
+            {"messages": query}, 
+            {"configurable": {"thread_id": thread_id}}
+        )
+        return response["structured_response"]
+    async def recommend_product_v2(self, query: str, thread_id=0):
+   
+    # 1. 提取搜索条件
+    condition = await self.extract_search_condition(query)
+    logger.info(f"提取的条件: keyword={condition.keyword}, price={condition.min_price}-{condition.max_price}")
+    
+    # 2. 使用 keyword 进行向量搜索
+    search_keyword = condition.keyword or query
+    docs = self.vector_store.similarity_search(search_keyword, k=20)
+    logger.info(f"向量搜索返回 {len(docs)} 条结果")
+    
+    # 3. 按价格过滤
+    filtered_docs = []
+    for doc in docs:
+        price = doc.metadata.get('price', 0)
+        if condition.min_price <= price <= condition.max_price:
+            filtered_docs.append(doc)
+    
+    logger.info(f"价格过滤后剩余 {len(filtered_docs)} 条结果")
+    
+    # 4. 构建商品列表
+    product_list = []
+    for doc in filtered_docs[:10]:
+        meta = doc.metadata
+        product_list.append({
+            "id": meta.get('id'),
+            "spu_id": meta.get('spu_id'),
+            "sku_name": meta.get('sku_name'),
+            "price": meta.get('price'),
+            "sku_default_img": meta.get('sku_default_img')
+        })
+    
+    # 5. 如果没有结果，返回空
+    if not product_list:
+        return ProductRecommendResponse(
+            summary="暂无符合条件的商品",
+            product_list=[],
+            reason=["未找到匹配的商品"]
+        )
+    
+    # 6. 使用大模型生成推荐理由
+    from smart_search.models.schemas import GoodsInfo
+    from langchain_core.messages import SystemMessage, HumanMessage
+    
+    goods_list = [GoodsInfo(**p) for p in product_list]
+    
+    # 构建 prompt
+    prompt_template = f"""
+    请根据以下商品信息，为用户推荐商品并给出推荐理由。
+    
+    用户查询：{query}
+    搜索条件：{condition.keyword}，价格范围：{condition.min_price}-{condition.max_price}
+    
+    商品列表：
+    {chr(10).join([f"- {p.sku_name}（{p.price}元）" for p in goods_list])}
+    
+    请返回JSON格式：
+    {{"summary": "总结导语", "reason": ["理由1", "理由2"]}}
+    """
+    
+    # 调用大模型
+    response = await self.llm.ainvoke([
+        SystemMessage(content="你是专业的商品推荐助手"),
+        HumanMessage(content=prompt_template)
+    ])
+    
+    # 解析响应
+    import json
+    try:
+        result = json.loads(response.content)
+        return ProductRecommendResponse(
+            summary=result.get("summary", "为您推荐以下商品"),
+            product_list=goods_list,
+            reason=result.get("reason", [])
+        )
+    except:
+        return ProductRecommendResponse(
+            summary="为您推荐以下商品",
+            product_list=goods_list,
+            reason=["这些商品符合您的需求"]
+        )

@@ -1,0 +1,8 @@
+pyproject.toml
+src/mall_micro_ai_search.egg-info/PKG-INFO
+src/mall_micro_ai_search.egg-info/SOURCES.txt
+src/mall_micro_ai_search.egg-info/dependency_links.txt
+src/mall_micro_ai_search.egg-info/requires.txt
+src/mall_micro_ai_search.egg-info/top_level.txt
+tests/test_search_service.py
+tests/test_vector_sync_service.py
